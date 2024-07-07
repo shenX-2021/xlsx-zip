@@ -25,16 +25,12 @@ interface EntryBuffer {
 
 interface EntryBase {
   name: string;
-  // filePath?: string;
-  // buffer?: Buffer;
   compressedBuffer: Buffer;
   uncompressedSize: number;
   crc32: number;
   zip64: boolean;
   offsetMap: {
     lfh: number;
-    // centralDirHeader: number;
-    // centralDirEndRecord: number;
   };
 }
 type Entry = EntryBase &
@@ -276,7 +272,9 @@ export class XlsxZip {
     // signature
     this.write32(SignatureEnum.CENTRAL_DIRECTORY_HEADER);
     // compress version
-    this.write16(VersionEnum.ZIP64);
+    this.write16(
+      entry.zip64 ? VersionEnum.ZIP64 : VersionEnum.EXTRACT_MIN_VERSION,
+    );
     // extract version
     this.write16(
       entry.zip64 ? VersionEnum.ZIP64 : VersionEnum.EXTRACT_MIN_VERSION,
