@@ -1,0 +1,6 @@
+node_modules/
+dist/
+local/
+
+# for OS X users
+.DS_Store

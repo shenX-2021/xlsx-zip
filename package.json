@@ -1,0 +1,40 @@
+{
+  "name": "xlsx-zip",
+  "version": "0.0.1",
+  "description": "a zip archiver for xlsx, support zip64.",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "local": "ts-node local/test.ts",
+    "lint": "eslint ./"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shenX-2021/xlsx-zip.git"
+  },
+  "keywords": [
+    "zip",
+    "zip64",
+    "xlsx"
+  ],
+  "author": "shenX-2021",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/shenX-2021/xlsx-zip/issues"
+  },
+  "homepage": "https://github.com/shenX-2021/xlsx-zip#readme",
+  "devDependencies": {
+    "@eslint/js": "^8.57.0",
+    "@types/node": "^20.14.9",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.8.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3",
+    "typescript-eslint": "^7.15.0"
+  },
+  "dependencies": {
+    "@types/crc32-stream": "^4.0.3",
+    "crc32-stream": "^6.0.0",
+    "minizlib": "^3.0.1"
+  }
+}
