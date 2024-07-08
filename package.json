@@ -1,6 +1,6 @@
 {
   "name": "xlsx-zip",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "a zip archiver for xlsx, support zip64.",
   "main": "dist/index.js",
   "scripts": {
