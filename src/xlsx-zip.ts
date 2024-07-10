@@ -2,16 +2,16 @@ import fs, { WriteStream } from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 
-import { CRC32Stream } from 'crc32-stream';
+import { DeflateCRC32Stream } from 'crc32-stream';
 import { Writer } from './writer';
 import {
   CompressMethodEnum,
   FlagEnum,
   SignatureEnum,
-  Size,
+  SizeEnum,
   VersionEnum,
 } from './enum';
-import { DeflateRaw, ZlibOptions } from 'minizlib';
+import { ZlibOptions } from 'minizlib';
 import zlib from 'zlib';
 
 type Without<T, U> = { [P in Exclude<keyof T, keyof U>]?: never };
@@ -25,8 +25,8 @@ interface EntryBuffer {
 
 interface EntryBase {
   name: string;
-  compressedBuffer: Buffer;
   uncompressedSize: number;
+  compressedSize: number;
   crc32: number;
   zip64: boolean;
   offsetMap: {
@@ -54,10 +54,14 @@ interface Option {
 export class XlsxZip {
   private option: Option = {};
 
+  private adding = false;
+  private finishing = false;
+
+  private id = 0;
   private list: Entry[] = [];
   private set: Set<string> = new Set();
 
-  private writer;
+  private writer: Writer;
   private buffers: Buffer[] = [];
 
   constructor(option?: Option) {
@@ -96,11 +100,11 @@ export class XlsxZip {
         name: internalPath,
         filePath: data,
         uncompressedSize: 0,
-        compressedBuffer: Buffer.alloc(0),
-        crc32: await this.crc32(data),
+        compressedSize: 0,
+        crc32: 0,
         zip64: false,
         offsetMap: {
-          lfh: this.writer.offset,
+          lfh: 0,
         },
       };
 
@@ -115,19 +119,17 @@ export class XlsxZip {
         name: internalPath,
         buffer: data,
         uncompressedSize: 0,
-        compressedBuffer: Buffer.alloc(0),
-        crc32: await this.crc32(data),
+        compressedSize: 0,
+        crc32: 0,
         zip64: false,
         offsetMap: {
-          lfh: this.writer.offset,
+          lfh: 0,
         },
       };
     }
 
     this.list.push(entry);
-    entry.compressedBuffer = await this.compress(entry);
-
-    this.writeLFH(entry);
+    this.looping();
   }
 
   /**
@@ -142,32 +144,46 @@ export class XlsxZip {
   }
 
   /**
-   * finish add action and flush stream
+   * finish add action and ready to finalize central directory header and end record
    */
   finish(): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       this.writer.on('end', () => {
-        resolve(Buffer.concat(this.buffers));
+        const buf = Buffer.concat(this.buffers);
+        resolve(buf);
       });
       this.writer.on('error', (err) => {
         reject(err);
       });
 
-      const offset = this.writer.offset;
-
-      for (const entry of this.list) {
-        this.writeCentralDirHeader(entry);
+      if (this.adding) {
+        this.finishing = true;
+        return;
       }
 
-      const size = this.writer.offset - offset;
-      const centralDirHeaderAttr = {
-        offset,
-        size,
-      };
-      this.writeCentralDirEndRecord(centralDirHeaderAttr);
-
-      this.writer.end();
+      this.finalize();
     });
+  }
+
+  /**
+   * finalize handle, write central directory header and end record
+   */
+  private finalize() {
+    if (this.adding || !this.finishing) return;
+    const offset = this.writer.offset;
+
+    for (const entry of this.list) {
+      this.writeCentralDirHeader(entry);
+    }
+
+    const size = this.writer.offset - offset;
+    const centralDirHeaderAttr = {
+      offset,
+      size,
+    };
+    this.writeCentralDirEndRecord(centralDirHeaderAttr);
+
+    this.writer.end();
   }
 
   /**
@@ -192,35 +208,6 @@ export class XlsxZip {
   }
 
   /**
-   * CRC32 checksum
-   */
-  private crc32(buffer: Buffer): Promise<number>;
-  private crc32(filePath: string): Promise<number>;
-  private crc32(data: string | Buffer): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const checksum = new CRC32Stream();
-
-      checksum.on('end', function (err: Error) {
-        if (err) return reject(err);
-
-        resolve(checksum.digest().readUInt32BE());
-      });
-      checksum.on('data', () => {});
-      checksum.on('error', function (err) {
-        return reject(err);
-      });
-
-      if (typeof data === 'string') {
-        const source = fs.createReadStream(data);
-        source.pipe(checksum);
-      } else {
-        checksum.write(data);
-        checksum.end();
-      }
-    });
-  }
-
-  /**
    * write local file header
    */
   private writeLFH(entry: Entry) {
@@ -228,6 +215,7 @@ export class XlsxZip {
     const nameBuffer = Buffer.from(entry.name);
     const extra = this.getExtra(entry);
 
+    entry.offsetMap.lfh = this.writer.offset;
     // signature
     this.write32(SignatureEnum.LFH);
     // extract version
@@ -244,10 +232,12 @@ export class XlsxZip {
     this.write32(entry.crc32);
     // compressed size
     this.write32(
-      entry.zip64 ? Size.ZIP64_LIMITATION : entry.compressedBuffer.length,
+      entry.zip64 ? SizeEnum.ZIP64_LIMITATION : entry.compressedSize,
     );
     // uncompressed size
-    this.write32(entry.zip64 ? Size.ZIP64_LIMITATION : entry.uncompressedSize);
+    this.write32(
+      entry.zip64 ? SizeEnum.ZIP64_LIMITATION : entry.uncompressedSize,
+    );
     // filename length
     this.write16(nameBuffer.length);
     // extra field length
@@ -255,9 +245,9 @@ export class XlsxZip {
     // filename
     this.writer.write(nameBuffer);
     // extra field
-    this.writer.write(extra);
-    // file chunk
-    this.writer.write(entry.compressedBuffer);
+    if (extra.length) {
+      this.writer.write(extra);
+    }
   }
 
   /**
@@ -288,9 +278,11 @@ export class XlsxZip {
     // crc32
     this.write32(entry.crc32);
     // compressed size
-    this.write32(entry.compressedBuffer.length);
+    this.write32(entry.compressedSize);
     // uncompressed size
-    this.write32(entry.zip64 ? Size.ZIP64_LIMITATION : entry.uncompressedSize);
+    this.write32(
+      entry.zip64 ? SizeEnum.ZIP64_LIMITATION : entry.uncompressedSize,
+    );
     // filename length
     this.write16(nameBuffer.length);
     // extra field length
@@ -309,7 +301,9 @@ export class XlsxZip {
     // filename
     this.writer.write(nameBuffer);
     // extra field
-    this.writer.write(extra);
+    if (extra.length) {
+      this.writer.write(extra);
+    }
     // file comment
     this.writer.write(fileComment);
   }
@@ -391,30 +385,56 @@ export class XlsxZip {
   }
 
   /**
+   * looping to write local file header and file chunk
+   */
+  private looping() {
+    if (this.adding) return;
+
+    const entry = this.list[this.id++];
+    if (entry) {
+      this.adding = true;
+
+      this.compress(entry);
+    } else {
+      this.adding = false;
+
+      this.finalize();
+    }
+  }
+
+  /**
    * compress file chunk through deflate
    */
-  private compress(entry: Entry): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const deflateRaw = new DeflateRaw(this.option?.zlib ?? {});
+  private compress(entry: Entry) {
+    // @ts-expect-error ts(2554)
+    const checksum = new DeflateCRC32Stream(this.option?.zlib ?? {});
 
-      const bufferList: Buffer[] = [];
-      deflateRaw.on('data', (chunk) => {
-        bufferList.push(chunk);
-      });
-      deflateRaw.on('error', (err) => {
-        reject(err);
-      });
-      deflateRaw.on('end', () => {
-        resolve(Buffer.concat(bufferList));
-      });
-
-      if (entry.buffer) {
-        deflateRaw.end(entry.buffer);
-      } else {
-        const rs = fs.createReadStream(entry.filePath);
-        rs.pipe(deflateRaw);
-      }
+    const bufferList: Buffer[] = [];
+    checksum.on('data', (chunk) => {
+      bufferList.push(chunk);
     });
+    checksum.on('error', (err) => {
+      this.writer.emit('error', err);
+    });
+    checksum.on('end', () => {
+      entry.crc32 = checksum.digest().readUInt32LE();
+      entry.compressedSize = checksum.size(true);
+
+      this.writeLFH(entry);
+      for (const buffer of bufferList) {
+        this.writer.write(buffer);
+      }
+
+      this.adding = false;
+      this.looping();
+    });
+
+    if (entry.buffer) {
+      checksum.end(entry.buffer);
+    } else {
+      const rs = fs.createReadStream(entry.filePath);
+      rs.pipe(checksum);
+    }
   }
 
   /**
@@ -430,7 +450,7 @@ export class XlsxZip {
     buffer.writeUInt16LE(0x0001);
     buffer.writeUInt16LE(16, 2);
     buffer.writeBigUInt64LE(BigInt(entry.uncompressedSize), 4);
-    buffer.writeBigUint64LE(BigInt(entry.compressedBuffer.length), 12);
+    buffer.writeBigUint64LE(BigInt(entry.compressedSize), 12);
 
     return buffer;
   }
