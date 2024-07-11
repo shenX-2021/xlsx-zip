@@ -38,6 +38,8 @@ async function main() {
   await xlsxZip.addDirectory(null, dirPath);
   // add by Buffer
   await xlsxZip.add('entry/path1', Buffer.from('entry'));
+  // add by Buffer list
+  await xlsxZip.add('entry/path1', [Buffer.from('entry')]);
   // add by file path
   await xlsxZip.add('entry/path2', 'file/path');
 
@@ -65,6 +67,8 @@ async function main() {
   await xlsxZip.addDirectory(null, dirPath);
   // add by Buffer
   await xlsxZip.add('entry/path1', Buffer.from('entry'));
+  // add by Buffer list
+  await xlsxZip.add('entry/path1', [Buffer.from('entry')]);
   // add by file path
   await xlsxZip.add('entry/path2', 'file/path');
 

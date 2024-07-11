@@ -20,7 +20,7 @@ interface EntryFilePath {
   filePath: string;
 }
 interface EntryBuffer {
-  buffer: Buffer;
+  bufferList: Buffer[];
 }
 
 interface EntryBase {
@@ -84,7 +84,11 @@ export class XlsxZip {
    */
   async add(internalPath: string, filePath: string): Promise<void>;
   async add(internalPath: string, buffer: Buffer): Promise<void>;
-  async add(internalPath: string, data: string | Buffer): Promise<void> {
+  async add(internalPath: string, bufferList: Buffer[]): Promise<void>;
+  async add(
+    internalPath: string,
+    data: string | Buffer | Buffer[],
+  ): Promise<void> {
     if (this.set.has(internalPath)) {
       throw new Error(`exist entry name: ${internalPath}`);
     }
@@ -114,14 +118,19 @@ export class XlsxZip {
         entry.zip64 = true;
       }
     } else {
+      if (Buffer.isBuffer(data)) {
+        data = [data];
+      }
+      const uncompressedSize = data.reduce((prev, cur) => prev + cur.length, 0);
+
       // buffer
       entry = {
         name: internalPath,
-        buffer: data,
-        uncompressedSize: 0,
+        bufferList: data,
+        uncompressedSize,
         compressedSize: 0,
         crc32: 0,
-        zip64: false,
+        zip64: uncompressedSize > 0xffffffff,
         offsetMap: {
           lfh: 0,
         },
@@ -390,7 +399,7 @@ export class XlsxZip {
   private looping() {
     if (this.adding) return;
 
-    const entry = this.list[this.id++];
+    const entry = this.list[this.id];
     if (entry) {
       this.adding = true;
 
@@ -425,12 +434,16 @@ export class XlsxZip {
         this.writer.write(buffer);
       }
 
+      this.id++;
       this.adding = false;
       this.looping();
     });
 
-    if (entry.buffer) {
-      checksum.end(entry.buffer);
+    if (entry.bufferList) {
+      for (const buffer of entry.bufferList) {
+        checksum.write(buffer);
+      }
+      checksum.end();
     } else {
       const rs = fs.createReadStream(entry.filePath);
       rs.pipe(checksum);
