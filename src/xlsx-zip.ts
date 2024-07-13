@@ -49,10 +49,13 @@ interface Option {
   zlib?: ZlibOptions;
   // write stream. if set, finish method won't return ZIP Buffer
   stream?: WriteStream;
+  // RegExp parameter, prevents Entries Matching the pattern from entering ZIP stream.
+  regExp?: RegExp | string;
 }
 
 export class XlsxZip {
   private option: Option = {};
+  private regExp: RegExp;
 
   private adding = false;
   private finishing = false;
@@ -67,6 +70,12 @@ export class XlsxZip {
   constructor(option?: Option) {
     if (option) {
       this.option = option;
+    }
+    // init regExp
+    if (typeof this.option.regExp === 'string') {
+      this.regExp = new RegExp(this.option.regExp);
+    } else if (this.option.regExp instanceof RegExp) {
+      this.regExp = this.option.regExp;
     }
 
     this.writer = new Writer();
@@ -89,6 +98,10 @@ export class XlsxZip {
     internalPath: string,
     data: string | Buffer | Buffer[],
   ): Promise<void> {
+    if (this.regExp && this.regExp.test(internalPath)) {
+      return;
+    }
+
     if (this.set.has(internalPath)) {
       throw new Error(`exist entry name: ${internalPath}`);
     }

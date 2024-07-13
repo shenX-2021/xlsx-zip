@@ -75,3 +75,28 @@ async function main() {
   await xlsxZip.finish();
 }
 ```
+
+### RegExp
+you can filter some path you don't want to add into ZIP stream with `regExp` parameter
+```javascript
+const { XlsxZip } = require('xlsx-zip');
+const fs = require('fs');
+
+async function main() {
+  const xlsxZip = new XlsxZip({
+    regExp: '.DS_Store'
+  });
+  // or
+  const xlsxZip = new XlsxZip({
+    regExp: new RegExp('.DS_Store')
+  });
+
+  const dirPath = 'directory/path';
+  // add by directory
+  await xlsxZip.addDirectory(null, dirPath);
+
+  const buf = await xlsxZip.finish();
+
+  fs.writeFileSync('./output.xlsx', buf);
+}
+```
