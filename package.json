@@ -8,7 +8,7 @@
     "local": "ts-node local/test.ts",
     "lint": "eslint src/ && tsc --noEmit",
     "prepack": "npm run build",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "repository": {
     "type": "git",
