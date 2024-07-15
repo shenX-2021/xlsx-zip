@@ -40,8 +40,9 @@ async function main() {
   await xlsxZip.add('entry/path1', Buffer.from('entry'));
   // add by Buffer list
   await xlsxZip.add('entry/path1', [Buffer.from('entry')]);
-  // add by file path
-  await xlsxZip.add('entry/path2', 'file/path');
+  // add by file stream
+  const rs = fs.createReadStream('file/path');
+  await xlsxZip.add('entry/path2', rs);
 
   const buf = await xlsxZip.finish();
 
@@ -69,8 +70,9 @@ async function main() {
   await xlsxZip.add('entry/path1', Buffer.from('entry'));
   // add by Buffer list
   await xlsxZip.add('entry/path1', [Buffer.from('entry')]);
-  // add by file path
-  await xlsxZip.add('entry/path2', 'file/path');
+  // add by file stream
+  const rs = fs.createReadStream('file/path');
+  await xlsxZip.add('entry/path2', rs);
 
   await xlsxZip.finish();
 }

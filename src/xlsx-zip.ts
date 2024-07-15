@@ -13,11 +13,12 @@ import {
 } from './enum';
 import { ZlibOptions } from 'minizlib';
 import zlib from 'zlib';
+import { Readable } from 'stream';
 
 type Without<T, U> = { [P in Exclude<keyof T, keyof U>]?: never };
 
-interface EntryFilePath {
-  filePath: string;
+interface EntryStream {
+  stream: Readable;
 }
 interface EntryBuffer {
   bufferList: Buffer[];
@@ -35,8 +36,8 @@ interface EntryBase {
 }
 type Entry = EntryBase &
   (
-    | (Without<EntryFilePath, EntryBuffer> & EntryBuffer)
-    | (Without<EntryBuffer, EntryFilePath> & EntryFilePath)
+    | (Without<EntryStream, EntryBuffer> & EntryBuffer)
+    | (Without<EntryBuffer, EntryStream> & EntryStream)
   );
 
 interface CentralDirHeaderAttr {
@@ -91,12 +92,12 @@ export class XlsxZip {
   /**
    * add entry with buffer/file path
    */
-  async add(internalPath: string, filePath: string): Promise<void>;
+  async add(internalPath: string, stream: Readable): Promise<void>;
   async add(internalPath: string, buffer: Buffer): Promise<void>;
   async add(internalPath: string, bufferList: Buffer[]): Promise<void>;
   async add(
     internalPath: string,
-    data: string | Buffer | Buffer[],
+    data: Readable | Buffer | Buffer[],
   ): Promise<void> {
     if (this.regExp && this.regExp.test(internalPath)) {
       return;
@@ -112,10 +113,10 @@ export class XlsxZip {
     }
     let entry: Entry;
 
-    if (typeof data === 'string') {
+    if (data instanceof Readable) {
       entry = {
         name: internalPath,
-        filePath: data,
+        stream: data,
         uncompressedSize: 0,
         compressedSize: 0,
         crc32: 0,
@@ -124,26 +125,19 @@ export class XlsxZip {
           lfh: 0,
         },
       };
-
-      const fileStat = await fsp.stat(data);
-      entry.uncompressedSize = fileStat.size;
-      if (entry.uncompressedSize > 0xffffffff) {
-        entry.zip64 = true;
-      }
     } else {
       if (Buffer.isBuffer(data)) {
         data = [data];
       }
-      const uncompressedSize = data.reduce((prev, cur) => prev + cur.length, 0);
 
       // buffer
       entry = {
         name: internalPath,
         bufferList: data,
-        uncompressedSize,
+        uncompressedSize: 0,
         compressedSize: 0,
         crc32: 0,
-        zip64: uncompressedSize > 0xffffffff,
+        zip64: false,
         offsetMap: {
           lfh: 0,
         },
@@ -224,8 +218,8 @@ export class XlsxZip {
         await this.addRecursively(inputDir, newBase);
         continue;
       }
-
-      await this.add(newBase, filePath);
+      const rs = fs.createReadStream(filePath);
+      await this.add(newBase, rs);
     }
   }
 
@@ -441,6 +435,10 @@ export class XlsxZip {
     checksum.on('end', () => {
       entry.crc32 = checksum.digest().readUInt32LE();
       entry.compressedSize = checksum.size(true);
+      entry.uncompressedSize = checksum.size();
+      if (entry.uncompressedSize > 0xffffffff) {
+        entry.zip64 = true;
+      }
 
       this.writeLFH(entry);
       for (const buffer of bufferList) {
@@ -458,8 +456,7 @@ export class XlsxZip {
       }
       checksum.end();
     } else {
-      const rs = fs.createReadStream(entry.filePath);
-      rs.pipe(checksum);
+      entry.stream.pipe(checksum);
     }
   }
 
