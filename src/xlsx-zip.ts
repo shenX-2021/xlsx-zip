@@ -433,7 +433,7 @@ export class XlsxZip {
       this.writer.emit('error', err);
     });
     checksum.on('end', () => {
-      entry.crc32 = checksum.digest().readUInt32LE();
+      entry.crc32 = checksum.digest().readUInt32BE();
       entry.compressedSize = checksum.size(true);
       entry.uncompressedSize = checksum.size();
       if (entry.uncompressedSize > 0xffffffff) {
