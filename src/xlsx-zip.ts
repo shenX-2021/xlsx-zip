@@ -294,7 +294,9 @@ export class XlsxZip {
     // crc32
     this.write32(entry.crc32);
     // compressed size
-    this.write32(entry.compressedSize);
+    this.write32(
+      entry.zip64 ? SizeEnum.ZIP64_LIMITATION : entry.compressedSize,
+    );
     // uncompressed size
     this.write32(
       entry.zip64 ? SizeEnum.ZIP64_LIMITATION : entry.uncompressedSize,
